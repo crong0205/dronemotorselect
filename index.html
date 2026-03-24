@@ -468,8 +468,53 @@ tr:nth-child(even) td{background:rgba(255,255,255,.01);}
 
     <!-- Current DB preview -->
     <div class="preview-section">
-      <h2>현재 배터리 DB</h2>
+      <h2>현재 배터리 DB
+        <button onclick="showBatAddRow()" style="margin-left:12px;background:var(--accent);color:#000;
+          border:none;border-radius:5px;font-family:var(--mono);font-size:10px;font-weight:700;
+          padding:4px 10px;cursor:pointer;">+ 항목 추가</button>
+      </h2>
       <div class="tbl-wrap" id="bat-preview-current"></div>
+      <!-- 배터리 추가 폼 -->
+      <div id="bat-add-form" style="display:none;margin-top:12px;background:var(--surface2);
+           border:1px solid var(--border2);border-radius:var(--r);padding:14px 16px;">
+        <div style="font-family:var(--mono);font-size:10px;font-weight:700;color:var(--text3);
+                    letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px;">배터리 항목 추가/수정</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">용량 (mAh)</div>
+            <input id="bat-inp-cap" type="number" placeholder="예: 25000"
+              style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border2);
+                     border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;">
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">팩 구성</div>
+            <input id="bat-inp-pack" type="text" placeholder="예: 6S 5P"
+              style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border2);
+                     border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;">
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">무게 (g)</div>
+            <input id="bat-inp-weight" type="number" placeholder="예: 2300"
+              style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border2);
+                     border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;">
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">에너지 (Wh) <span style="color:var(--text3);font-size:10px;">선택</span></div>
+            <input id="bat-inp-wh" type="number" placeholder="비워두면 자동계산"
+              style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border2);
+                     border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button onclick="confirmBatAdd()"
+            style="background:var(--accent);color:#000;border:none;border-radius:var(--r);
+                   font-family:var(--mono);font-size:11px;font-weight:700;padding:8px 18px;cursor:pointer;">저장</button>
+          <button onclick="document.getElementById('bat-add-form').style.display='none'"
+            style="background:transparent;border:1px solid var(--border2);color:var(--text2);
+                   border-radius:var(--r);font-family:var(--mono);font-size:11px;padding:8px 14px;cursor:pointer;">취소</button>
+          <span id="bat-add-hint" style="font-size:11px;color:var(--danger);align-self:center;"></span>
+        </div>
+      </div>
     </div>
 
     <!-- Reset & Storage Info -->
@@ -490,7 +535,7 @@ tr:nth-child(even) td{background:rgba(255,255,255,.01);}
 
     <!-- Motor Delete Section -->
     <div class="preview-section">
-      <h2>모터 조합 삭제</h2>
+      <h2>현재 모터 DB 목록</h2>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
         <input type="text" id="delete-search" placeholder="Type 또는 Propeller 이름 검색..."
           oninput="renderDeleteTable()"
@@ -505,6 +550,47 @@ tr:nth-child(even) td{background:rgba(255,255,255,.01);}
         <button class="btn-apply" id="btn-delete-confirm" onclick="confirmDelete()"
           style="background:var(--danger);padding:8px 18px;font-size:11px;" disabled>선택 항목 삭제</button>
         <button class="btn-reset" onclick="clearDeleteSelection()">선택 해제</button>
+      </div>
+      <!-- 모터 수정 폼 -->
+      <div id="motor-edit-form" style="display:none;margin-top:12px;background:var(--surface2);
+           border:1px solid var(--border2);border-radius:var(--r);padding:14px 16px;">
+        <div style="font-family:var(--mono);font-size:10px;font-weight:700;color:var(--text3);
+                    letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px;">모터 정보 수정</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">모터 타입</div>
+            <input id="motor-inp-type" type="text" readonly
+              style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border2);
+                     border-radius:5px;color:var(--text3);font-family:var(--mono);font-size:12px;padding:7px 10px;">
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">프로펠러</div>
+            <input id="motor-inp-prop" type="text" readonly
+              style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border2);
+                     border-radius:5px;color:var(--text3);font-family:var(--mono);font-size:12px;padding:7px 10px;">
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">모터 무게 (g)</div>
+            <input id="motor-inp-weight" type="number"
+              style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border2);
+                     border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;">
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">프롭 크기 (인치)</div>
+            <input id="motor-inp-propsize" type="number"
+              style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border2);
+                     border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;">
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">* 회귀계수는 수정 불가 (데이터 재업로드 필요)</div>
+        <div style="display:flex;gap:8px;">
+          <button onclick="confirmMotorEdit()"
+            style="background:var(--accent);color:#000;border:none;border-radius:var(--r);
+                   font-family:var(--mono);font-size:11px;font-weight:700;padding:8px 18px;cursor:pointer;">저장</button>
+          <button onclick="document.getElementById('motor-edit-form').style.display='none'"
+            style="background:transparent;border:1px solid var(--border2);color:var(--text2);
+                   border-radius:var(--r);font-family:var(--mono);font-size:11px;padding:8px 14px;cursor:pointer;">취소</button>
+        </div>
       </div>
     </div>
   </div>
@@ -986,7 +1072,7 @@ function showPreview(type, data) {
 
     const rows = sampleNew.map(m=>`<tr>
       <td>${m.type}</td><td>${m.propeller}</td><td>${m.prop_size}</td>
-      <td>${m.motor_weight_g.toFixed(1)}</td>
+      <td>${(m.motor_weight_g||0).toFixed(1)}</td>
       <td class="badge-ok">+ 신규 추가</td>
     </tr>`);
 
@@ -1057,19 +1143,90 @@ function cancelPending(){
 
 function renderCurrentBatDB(){
   const el=document.getElementById('bat-preview-current');
+  const v = +document.getElementById('batt_voltage').value;
   el.innerHTML=`<table>
-    <thead><tr><th>용량(mAh)</th><th>팩 구성</th><th>무게(g)</th><th>에너지(Wh)</th></tr></thead>
-    <tbody>${DB.batteries.map(b=>{
-      const wh=(+document.getElementById('batt_voltage').value*(b.capacity_mAh/1000)).toFixed(0);
-      return `<tr><td>${b.capacity_mAh.toLocaleString()}</td><td>${b.pack}</td><td>${b.weight_g}</td><td>${wh}</td></tr>`;
+    <thead><tr><th>용량(mAh)</th><th>팩 구성</th><th>무게(g)</th><th>에너지(Wh)</th><th></th></tr></thead>
+    <tbody>${DB.batteries.map((b,i)=>{
+      const wh = b.energy_wh || (v*(b.capacity_mAh/1000)).toFixed(0);
+      return `<tr>
+        <td>${b.capacity_mAh.toLocaleString()}</td>
+        <td>${b.pack}</td>
+        <td>${b.weight_g}</td>
+        <td>${wh}</td>
+        <td style="display:flex;gap:6px;">
+          <button class="btn-delete" onclick="editBatRow(${i})">수정</button>
+          <button class="btn-delete" onclick="deleteBatRow(${i})">삭제</button>
+        </td>
+      </tr>`;
     }).join('')}</tbody>
   </table>`;
+}
+
+let editingBatIdx = -1;
+
+function showBatAddRow() {
+  editingBatIdx = -1;
+  document.getElementById('bat-inp-cap').value = '';
+  document.getElementById('bat-inp-pack').value = '';
+  document.getElementById('bat-inp-weight').value = '';
+  document.getElementById('bat-inp-wh').value = '';
+  document.getElementById('bat-add-hint').textContent = '';
+  document.getElementById('bat-add-form').style.display = 'block';
+}
+
+function editBatRow(idx) {
+  editingBatIdx = idx;
+  const b = DB.batteries[idx];
+  document.getElementById('bat-inp-cap').value = b.capacity_mAh;
+  document.getElementById('bat-inp-pack').value = b.pack;
+  document.getElementById('bat-inp-weight').value = b.weight_g;
+  document.getElementById('bat-inp-wh').value = b.energy_wh || '';
+  document.getElementById('bat-add-hint').textContent = '';
+  document.getElementById('bat-add-form').style.display = 'block';
+  document.getElementById('bat-add-form').scrollIntoView({behavior:'smooth'});
+}
+
+function confirmBatAdd() {
+  const cap = parseFloat(document.getElementById('bat-inp-cap').value);
+  const pack = document.getElementById('bat-inp-pack').value.trim();
+  const weight = parseFloat(document.getElementById('bat-inp-weight').value);
+  const wh = document.getElementById('bat-inp-wh').value;
+  const hint = document.getElementById('bat-add-hint');
+  if (!cap || !pack || !weight) { hint.textContent = '용량, 팩 구성, 무게는 필수입니다.'; return; }
+  const entry = { capacity_mAh: cap, pack: pack, weight_g: weight };
+  if (wh) entry.energy_wh = parseFloat(wh);
+  if (editingBatIdx >= 0) {
+    DB.batteries[editingBatIdx] = entry;
+  } else {
+    DB.batteries.push(entry);
+    DB.batteries.sort((a,b) => a.capacity_mAh - b.capacity_mAh);
+  }
+  saveToStorage();
+  updateBadge();
+  renderCurrentBatDB();
+  document.getElementById('bat-add-form').style.display = 'none';
+  document.getElementById('db-dot').className = 'dot warn';
+}
+
+function deleteBatRow(idx) {
+  const b = DB.batteries[idx];
+  if (!confirm(`삭제하시겠습니까?\n${b.pack} (${b.capacity_mAh.toLocaleString()}mAh)`)) return;
+  DB.batteries.splice(idx, 1);
+  saveToStorage();
+  updateBadge();
+  renderCurrentBatDB();
+  document.getElementById('db-dot').className = 'dot warn';
 }
 
 // ═══════════════════════════════════════════
 // MOTOR DELETE FUNCTIONS
 // ═══════════════════════════════════════════
 let deleteSelected = new Set(); // "type||propeller" keys
+
+function safeB64(str) {
+  try { return btoa(unescape(encodeURIComponent(str))).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_'); }
+  catch(e) { return btoa(str.replace(/[^\x00-\x7F]/g,'?')).replace(/=/g,''); }
+}
 
 function renderDeleteTable() {
   const query = (document.getElementById('delete-search').value || '').toLowerCase();
@@ -1079,18 +1236,19 @@ function renderDeleteTable() {
   const countEl = document.getElementById('delete-count');
   countEl.textContent = `${filtered.length} / ${DB.motors.length}개 표시`;
 
-  const tbody = filtered.map(m => {
+  const tbody = filtered.map((m, i) => {
     const key = m.type+'||'+m.propeller;
     const checked = deleteSelected.has(key) ? 'checked' : '';
     const selClass = deleteSelected.has(key) ? 'selected' : '';
-    return `<tr class="delete-row ${selClass}" id="drow-${btoa(key).replace(/=/g,'')}">
+    const rowId = 'drow-' + i;
+    return `<tr class="delete-row ${selClass}" id="${rowId}" data-key="${key.replace(/"/g,'&quot;')}">
       <td><input type="checkbox" class="delete-row-check" ${checked}
-        onchange="toggleDeleteRow('${key}', this.checked)"></td>
+        onchange="toggleDeleteRow(this.closest('tr').dataset.key, this.checked)"></td>
       <td>${m.type}</td>
       <td>${m.propeller}</td>
-      <td>${m.prop_size}"</td>
-      <td>${m.motor_weight_g.toFixed(0)}g</td>
-      <td><button class="btn-delete" onclick="deleteSingle('${key}')">삭제</button></td>
+      <td>${m.prop_size}</td>
+      <td>${(m.motor_weight_g||0).toFixed(0)}g</td>
+      <td><button class="btn-delete" style="margin-right:4px;" onclick="editMotorRow(this.closest('tr').dataset.key)">수정</button><button class="btn-delete" onclick="deleteSingle(this.closest('tr').dataset.key)">삭제</button></td>
     </tr>`;
   }).join('');
 
@@ -1108,10 +1266,11 @@ function renderDeleteTable() {
 function toggleDeleteRow(key, checked) {
   if(checked) deleteSelected.add(key);
   else deleteSelected.delete(key);
-  // row highlight
-  const id = 'drow-'+btoa(key).replace(/=/g,'');
-  const row = document.getElementById(id);
-  if(row) row.classList.toggle('selected', checked);
+  // row highlight - find by data-key attribute
+  const rows = document.querySelectorAll('#delete-table tr[data-key]');
+  rows.forEach(row => {
+    if(row.dataset.key === key) row.classList.toggle('selected', checked);
+  });
   updateDeleteBar();
 }
 
@@ -1133,6 +1292,33 @@ function updateDeleteBar() {
   bar.style.display = deleteSelected.size > 0 ? 'flex' : 'none';
   btn.disabled = deleteSelected.size === 0;
   cnt.textContent = `${deleteSelected.size}개 선택됨`;
+}
+
+let editingMotorKey = null;
+
+function editMotorRow(key) {
+  const m = DB.motors.find(m => (m.type+'||'+m.propeller) === key);
+  if (!m) return;
+  editingMotorKey = key;
+  document.getElementById('motor-inp-type').value = m.type;
+  document.getElementById('motor-inp-prop').value = m.propeller;
+  document.getElementById('motor-inp-weight').value = m.motor_weight_g;
+  document.getElementById('motor-inp-propsize').value = m.prop_size;
+  document.getElementById('motor-edit-form').style.display = 'block';
+  document.getElementById('motor-edit-form').scrollIntoView({behavior:'smooth'});
+}
+
+function confirmMotorEdit() {
+  if (!editingMotorKey) return;
+  const m = DB.motors.find(m => (m.type+'||'+m.propeller) === editingMotorKey);
+  if (!m) return;
+  m.motor_weight_g = parseFloat(document.getElementById('motor-inp-weight').value) || m.motor_weight_g;
+  m.prop_size = parseInt(document.getElementById('motor-inp-propsize').value) || m.prop_size;
+  saveToStorage();
+  updateBadge();
+  renderDeleteTable();
+  document.getElementById('motor-edit-form').style.display = 'none';
+  document.getElementById('db-dot').className = 'dot warn';
 }
 
 function deleteSingle(key) {
@@ -1308,7 +1494,7 @@ function renderResults(results){
         </div>
         <div class="stat">
           <div class="stat-label">모터 무게</div>
-          <div class="stat-val">${r.motor_weight_g.toFixed(0)}g</div>
+          <div class="stat-val">${(r.motor_weight_g||0).toFixed(0)}g</div>
           <div class="stat-sub">×${N} = ${mwt}g</div>
         </div>
         <div class="stat">
