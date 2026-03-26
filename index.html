@@ -545,7 +545,7 @@ tr:nth-child(even) td{background:rgba(255,255,255,.01);}
         <span style="font-family:var(--mono);font-size:10px;color:var(--text3);" id="delete-count"></span>
       </div>
       <div class="tbl-wrap" id="delete-table"></div>
-      <div style="margin-top:12px;display:none;align-items:center;gap:10px;" id="delete-confirm-bar">
+      <div style="margin-top:12px;display:flex;align-items:center;gap:10px;" id="delete-confirm-bar" style="display:none">
         <span style="font-family:var(--mono);font-size:11px;color:var(--danger);" id="delete-selected-count"></span>
         <button class="btn-apply" id="btn-delete-confirm" onclick="confirmDelete()"
           style="background:var(--danger);padding:8px 18px;font-size:11px;" disabled>선택 항목 삭제</button>
@@ -1324,6 +1324,13 @@ function confirmMotorEdit() {
 function deleteSingle(key) {
   if(!confirm(`삭제하시겠습니까?\n${key.replace('||',' + ')}`)) return;
   DB.motors = DB.motors.filter(m => (m.type+'||'+m.propeller) !== key);
+  // fileSlots에서도 해당 모터 제거 (새로고침 후 복원 방지)
+  Object.keys(fileSlots).forEach(fname => {
+    if(fileSlots[fname].motors) {
+      fileSlots[fname].motors = fileSlots[fname].motors.filter(m => (m.type+'||'+m.propeller) !== key);
+      fileSlots[fname].count = fileSlots[fname].motors.length;
+    }
+  });
   deleteSelected.delete(key);
   updateBadge();
   renderDeleteTable();
@@ -1335,6 +1342,13 @@ function confirmDelete() {
   if(deleteSelected.size === 0) return;
   if(!confirm(`선택한 ${deleteSelected.size}개 모터 조합을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
   DB.motors = DB.motors.filter(m => !deleteSelected.has(m.type+'||'+m.propeller));
+  // fileSlots에서도 삭제된 모터 제거 (새로고침 후 복원 방지)
+  Object.keys(fileSlots).forEach(fname => {
+    if(fileSlots[fname].motors) {
+      fileSlots[fname].motors = fileSlots[fname].motors.filter(m => !deleteSelected.has(m.type+'||'+m.propeller));
+      fileSlots[fname].count = fileSlots[fname].motors.length;
+    }
+  });
   deleteSelected.clear();
   updateBadge();
   renderDeleteTable();
