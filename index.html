@@ -848,105 +848,11 @@ function parseFileToSlot(file) {
   const statusEl = document.getElementById('motor-status');
   showStatus(statusEl, 'info', `"${fname}" 읽는 중...`);
 
-  const COL_KEYS = {
-    type:       ['type'],
-    propeller:  ['prop'],
-    throttle:   ['throttle'],
-    voltage:    ['volt'],
-    thrust:     ['thrust'],
-    torque:     ['torque'],
-    current:    ['current'],
-    rpm:        ['rpm'],
-    power:      ['power'],
-    efficiency: ['effic', 'eff'],
-    weight:     ['motor weight', 'weight']
-  };
-
-  function parseSheetRows(raw) {
-    // 각 시트마다 헤더를 독립적으로 찾음
-    let headerIdx = -1, colMap = {};
-    for (let i = 0; i < Math.min(raw.length, 10); i++) {
-      const row = raw[i];
-      if (!row) continue;
-      const found = {};
-      row.forEach((cell, ci) => {
-        if (cell == null) return;
-        const s = String(cell).toLowerCase().trim();
-        for (const [field, keywords] of Object.entries(COL_KEYS)) {
-          if (keywords.some(k => s.includes(k)) && !(field in found)) found[field] = ci;
-        }
-      });
-      if (found.thrust !== undefined && found.power !== undefined) {
-        headerIdx = i; colMap = found; break;
-      }
-    }
-    if (headerIdx === -1) return []; // 헤더 없으면 빈 배열
-
-    const C = colMap;
-    const rows = raw.slice(headerIdx + 1);
-    let lastType = '', lastProp = '', lastWeight = null;
-    return rows.map(r => {
-      if (!r) return null;
-      if (r[C.type]      != null && r[C.type]      !== '') lastType   = String(r[C.type]).trim();
-      if (r[C.propeller] != null && r[C.propeller] !== '') lastProp   = String(r[C.propeller]).trim();
-      if (C.weight !== undefined && r[C.weight] != null && r[C.weight] !== '') lastWeight = Number(r[C.weight]);
-      return [
-        lastType, lastProp,
-        r[C.throttle],
-        C.voltage    !== undefined ? r[C.voltage]    : null,
-        r[C.thrust],
-        C.torque     !== undefined ? r[C.torque]     : null,
-        C.current    !== undefined ? r[C.current]    : null,
-        C.rpm        !== undefined ? r[C.rpm]        : null,
-        r[C.power],
-        C.efficiency !== undefined ? r[C.efficiency] : null,
-        lastWeight
-      ];
-    }).filter(r => r && r[0] && r[1] && r[4] != null && r[2] != null);
-  }
-
   const reader = new FileReader();
   reader.onload = e => {
     try {
       const wb = XLSX.read(e.target.result, {type:'array'});
-
-      // 각 시트를 독립적으로 파싱 후 결과 합치기
-      const filled = wb.SheetNames.reduce((acc, name) => {
-        const ws = wb.Sheets[name];
-        const raw = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
-        return acc.concat(parseSheetRows(raw));
-      }, []);
-
-      const groups = {};
-      for (const r of filled) {
-        const key = r[0]+'||'+r[1];
-        if (!groups[key]) groups[key] = {type:r[0], prop:r[1], weight:r[10], rows:[]};
-        const thrust=Number(r[4]), throttle=Number(r[2]), power=Number(r[8]);
-        const voltage=r[3]!=null?Number(r[3]):0, current=r[6]!=null?Number(r[6]):0, eff=r[9]!=null?Number(r[9]):0;
-        if (!isNaN(thrust) && !isNaN(throttle) && thrust > 0)
-          groups[key].rows.push({thrust, throttle, power, voltage, current, eff});
-      }
-
-      const motors = [];
-      for (const [, g] of Object.entries(groups)) {
-        if (g.rows.length < 3) continue;
-        const xs = g.rows.map(r => r.thrust);
-        try {
-          const ct=polyfit(xs,g.rows.map(r=>r.throttle));
-          const cp=polyfit(xs,g.rows.map(r=>r.power));
-          const cv=polyfit(xs,g.rows.map(r=>r.voltage));
-          const cc=polyfit(xs,g.rows.map(r=>r.current));
-          const ce=polyfit(xs,g.rows.map(r=>r.eff));
-          if (!ct||!cp||!cv||!cc||!ce) continue;
-          const pm = g.prop.match(/(\d+)/);
-          motors.push({
-            type:g.type, propeller:g.prop,
-            prop_size: pm ? parseInt(pm[1]) : 0,
-            motor_weight_g: g.weight || 0,
-            coef_throttle:ct, coef_power:cp, coef_voltage:cv, coef_current:cc, coef_efficiency:ce
-          });
-        } catch(e) {}
-      }
+      const motors = parseMotorDataFromWb(wb);
 
       if (motors.length === 0) {
         fileSlots[fname] = {status:'err', count:0, motors:[]};
@@ -979,14 +885,7 @@ function parseFile(file, type) {
     try {
       const wb = XLSX.read(e.target.result, {type:'array'});
       if (type === 'motor') {
-        // 각 시트를 독립적으로 raw로 넘겨서 parseMotorData가 시트별로 헤더 찾게 함
-        const allRaw = wb.SheetNames.reduce((acc, name) => {
-          const ws = wb.Sheets[name];
-          const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
-          // 시트 구분자 역할: 빈 행 2개 추가해서 헤더 재탐색 유도
-          return acc.concat(rows).concat([null, null]);
-        }, []);
-        parseMotorData(allRaw, statusEl);
+        parseMotorDataMultiSheet(wb, statusEl);
       } else {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const raw = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
@@ -997,6 +896,115 @@ function parseFile(file, type) {
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+// ── 공통: 열 이름 매핑으로 시트 한 장 파싱 → filled 배열 반환 ──
+function parseOneSheetRows(raw) {
+  const COL_KEYS = {
+    type:       ['type'],
+    propeller:  ['prop'],
+    throttle:   ['throttle'],
+    voltage:    ['volt'],
+    thrust:     ['thrust'],
+    torque:     ['torque'],
+    current:    ['current'],
+    rpm:        ['rpm'],
+    power:      ['power'],
+    efficiency: ['effic', 'eff'],
+    weight:     ['motor weight', 'weight']
+  };
+  let headerIdx = -1, colMap = {};
+  for (let i = 0; i < Math.min(raw.length, 10); i++) {
+    const row = raw[i];
+    if (!row) continue;
+    const found = {};
+    row.forEach((cell, ci) => {
+      if (cell == null) return;
+      const s = String(cell).toLowerCase().trim();
+      for (const [field, keywords] of Object.entries(COL_KEYS)) {
+        if (keywords.some(k => s.includes(k)) && !(field in found)) found[field] = ci;
+      }
+    });
+    if (found.thrust !== undefined && found.power !== undefined) {
+      headerIdx = i; colMap = found; break;
+    }
+  }
+  if (headerIdx === -1) return [];
+  const C = colMap;
+  let lastType = '', lastProp = '', lastWeight = null;
+  return raw.slice(headerIdx + 1).map(r => {
+    if (!r) return null;
+    if (r[C.type]      != null && r[C.type]      !== '') lastType   = String(r[C.type]).trim();
+    if (r[C.propeller] != null && r[C.propeller] !== '') lastProp   = String(r[C.propeller]).trim();
+    if (C.weight !== undefined && r[C.weight] != null && r[C.weight] !== '') lastWeight = Number(r[C.weight]);
+    return [
+      lastType, lastProp,
+      r[C.throttle],
+      C.voltage    !== undefined ? r[C.voltage]    : null,
+      r[C.thrust],
+      C.torque     !== undefined ? r[C.torque]     : null,
+      C.current    !== undefined ? r[C.current]    : null,
+      C.rpm        !== undefined ? r[C.rpm]        : null,
+      r[C.power],
+      C.efficiency !== undefined ? r[C.efficiency] : null,
+      lastWeight
+    ];
+  }).filter(r => r && r[0] && r[1] && r[4] != null && r[2] != null);
+}
+
+// ── 공통: workbook 전체 시트 파싱 → motors 배열 반환 ──
+function parseMotorDataFromWb(wb) {
+  // 시트별로 독립 파싱 후 결과 합치기
+  const filled = wb.SheetNames.reduce((acc, name) => {
+    const ws = wb.Sheets[name];
+    const raw = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+    return acc.concat(parseOneSheetRows(raw));
+  }, []);
+
+  const groups = {};
+  for (const r of filled) {
+    const key = r[0]+'||'+r[1];
+    if (!groups[key]) groups[key] = {type:r[0], prop:r[1], weight:r[10], rows:[]};
+    const thrust=Number(r[4]), throttle=Number(r[2]), power=Number(r[8]);
+    const voltage=r[3]!=null?Number(r[3]):0, current=r[6]!=null?Number(r[6]):0, eff=r[9]!=null?Number(r[9]):0;
+    if (!isNaN(thrust) && !isNaN(throttle) && thrust > 0)
+      groups[key].rows.push({thrust, throttle, power, voltage, current, eff});
+  }
+
+  const motors = [];
+  for (const [, g] of Object.entries(groups)) {
+    if (g.rows.length < 3) continue;
+    const xs = g.rows.map(r => r.thrust);
+    try {
+      const ct=polyfit(xs,g.rows.map(r=>r.throttle));
+      const cp=polyfit(xs,g.rows.map(r=>r.power));
+      const cv=polyfit(xs,g.rows.map(r=>r.voltage));
+      const cc=polyfit(xs,g.rows.map(r=>r.current));
+      const ce=polyfit(xs,g.rows.map(r=>r.eff));
+      if (!ct||!cp||!cv||!cc||!ce) continue;
+      const pm = g.prop.match(/(\d+)/);
+      motors.push({
+        type:g.type, propeller:g.prop,
+        prop_size: pm ? parseInt(pm[1]) : 0,
+        motor_weight_g: g.weight || 0,
+        coef_throttle:ct, coef_power:cp, coef_voltage:cv, coef_current:cc, coef_efficiency:ce
+      });
+    } catch(e) {}
+  }
+  return motors;
+}
+
+// ── 공통: workbook 전체 시트 파싱 → parseMotorData용 멀티시트 래퍼 ──
+function parseMotorDataMultiSheet(wb, statusEl) {
+  const motors = parseMotorDataFromWb(wb);
+  if (motors.length === 0) {
+    showStatus(statusEl, 'err', '❌ 회귀 가능한 조합 없음. 각 모터+프롭 조합당 3행 이상 필요합니다.');
+    return;
+  }
+  showStatus(statusEl, 'ok',
+    `✓ ${motors.length}개 모터+프롭 조합 파싱 완료 (${wb.SheetNames.length}개 시트)`);
+  pendingData = { type: 'motor', motors };
+  showPreview('motor', motors);
 }
 
 // ── MOTOR PARSER ──
