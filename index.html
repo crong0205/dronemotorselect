@@ -852,8 +852,12 @@ function parseFileToSlot(file) {
   reader.onload = e => {
     try {
       const wb = XLSX.read(e.target.result, {type:'array'});
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+      // 모든 시트 합치기
+      const raw = wb.SheetNames.reduce((acc, name) => {
+        const ws = wb.Sheets[name];
+        const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+        return acc.concat(rows);
+      }, []);
 
       // 모터 파싱
       let startIdx = 0;
@@ -931,11 +935,19 @@ function parseFile(file, type) {
   reader.onload = e => {
     try {
       const wb = XLSX.read(e.target.result, {type:'array'});
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
-
-      if(type==='motor') parseMotorData(raw, statusEl);
-      else parseBatteryData(raw, statusEl);
+      if(type==='motor') {
+        // 모든 시트 합치기
+        const raw = wb.SheetNames.reduce((acc, name) => {
+          const ws = wb.Sheets[name];
+          const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+          return acc.concat(rows);
+        }, []);
+        parseMotorData(raw, statusEl);
+      } else {
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const raw = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+        parseBatteryData(raw, statusEl);
+      }
     } catch(err) {
       showStatus(statusEl, 'err', '❌ 파일 읽기 실패: '+err.message);
     }
@@ -945,140 +957,72 @@ function parseFile(file, type) {
 
 // ── MOTOR PARSER ──
 function parseMotorData(raw, statusEl) {
-  // ── 1. 헤더 행 찾기 (열 이름 자동 매핑) ──
-  const COL_KEYS = {
-    type:       ['type'],
-    propeller:  ['prop'],
-    throttle:   ['throttle'],
-    voltage:    ['volt'],
-    thrust:     ['thrust'],
-    torque:     ['torque'],
-    current:    ['current'],
-    rpm:        ['rpm'],
-    power:      ['power'],
-    efficiency: ['effic', 'eff'],
-    weight:     ['motor weight', 'weight']
-  };
-
-  let headerIdx = -1;
-  let colMap = {};
-
-  for (let i = 0; i < Math.min(raw.length, 10); i++) {
-    const row = raw[i];
-    if (!row) continue;
-    const found = {};
-    row.forEach((cell, ci) => {
-      if (cell == null) return;
-      const s = String(cell).toLowerCase().trim();
-      for (const [field, keywords] of Object.entries(COL_KEYS)) {
-        if (keywords.some(k => s.includes(k))) {
-          if (!(field in found)) found[field] = ci;
-        }
-      }
-    });
-    // thrust + power 둘 다 찾으면 헤더 행으로 확정
-    if (found.thrust !== undefined && found.power !== undefined) {
-      headerIdx = i;
-      colMap = found;
-      break;
-    }
+  // skip header row, find data start
+  const dataRows = raw.slice(2); // row 0 = blank or header spacer, row 1 = col names
+  // If row 0 is blank and row 1 is header, slice from 2; else try slice from 1
+  // Robust: find first row where col E (index 4) is a number
+  let startIdx = 0;
+  for(let i=0;i<raw.length;i++){
+    const v = raw[i][4];
+    if(typeof v==='number' && !isNaN(v) && v>0){startIdx=i;break;}
   }
+  const rows = raw.slice(startIdx);
 
-  if (headerIdx === -1) {
-    showStatus(statusEl, 'err',
-      '❌ 헤더 행을 찾을 수 없습니다.\nThrust, Power 열 이름이 있는지 확인해 주세요.\n(대소문자 무관, 부분 일치 허용)');
+  // Forward fill cols 0,1,10
+  let lastType='', lastProp='', lastWeight=null;
+  const filled = rows.map(r=>{
+    if(r[0]!=null&&r[0]!=='') lastType=String(r[0]).trim();
+    if(r[1]!=null&&r[1]!=='') lastProp=String(r[1]).trim();
+    if(r[10]!=null&&r[10]!=='') lastWeight=Number(r[10]);
+    return [lastType,lastProp,r[2],r[3],r[4],r[5],r[6],r[7],r[8],r[9],lastWeight];
+  }).filter(r=>r[0]&&r[1]&&r[4]!=null&&r[2]!=null);
+
+  if(filled.length<5){
+    showStatus(statusEl,'err','❌ 유효 데이터가 너무 적습니다 ('+filled.length+'행). 열 순서를 확인하세요.');
     return;
   }
 
-  // 필수 열 체크
-  const required = ['type', 'propeller', 'throttle', 'thrust', 'power'];
-  const missing = required.filter(f => colMap[f] === undefined);
-  if (missing.length > 0) {
-    showStatus(statusEl, 'err',
-      '❌ 필수 열을 찾을 수 없습니다: ' + missing.join(', ') + '\n열 이름에 해당 키워드가 포함되어 있는지 확인해 주세요.');
-    return;
-  }
-
-  // ── 2. 데이터 행 파싱 (헤더 다음 행부터) ──
-  const rows = raw.slice(headerIdx + 1);
-  const C = colMap;
-
-  let lastType = '', lastProp = '', lastWeight = null;
-  const filled = rows.map(r => {
-    if (!r) return null;
-    if (r[C.type]      != null && r[C.type]      !== '') lastType   = String(r[C.type]).trim();
-    if (r[C.propeller] != null && r[C.propeller] !== '') lastProp   = String(r[C.propeller]).trim();
-    if (C.weight !== undefined && r[C.weight] != null && r[C.weight] !== '')
-      lastWeight = Number(r[C.weight]);
-    return [
-      lastType, lastProp,
-      r[C.throttle],
-      C.voltage    !== undefined ? r[C.voltage]    : null,
-      r[C.thrust],
-      C.torque     !== undefined ? r[C.torque]     : null,
-      C.current    !== undefined ? r[C.current]    : null,
-      C.rpm        !== undefined ? r[C.rpm]        : null,
-      r[C.power],
-      C.efficiency !== undefined ? r[C.efficiency] : null,
-      lastWeight
-    ];
-  }).filter(r => r && r[0] && r[1] && r[4] != null && r[2] != null);
-
-  if (filled.length < 5) {
-    showStatus(statusEl, 'err',
-      '❌ 유효 데이터가 너무 적습니다 (' + filled.length + '행).\n인식된 헤더: ' + headerIdx + '번째 행\n열 매핑: ' + JSON.stringify(colMap));
-    return;
-  }
-
-  // ── 3. 그룹핑 & 회귀 ──
+  // Group & fit
   const groups = {};
-  for (const r of filled) {
-    const key = r[0] + '||' + r[1];
-    if (!groups[key]) groups[key] = { type: r[0], prop: r[1], weight: r[10], rows: [] };
-    const thrust   = Number(r[4]);
-    const throttle = Number(r[2]);
-    const power    = Number(r[8]);
-    const voltage  = r[3] != null ? Number(r[3]) : 0;
-    const current  = r[6] != null ? Number(r[6]) : 0;
-    const eff      = r[9] != null ? Number(r[9]) : 0;
-    if (!isNaN(thrust) && !isNaN(throttle) && thrust > 0)
-      groups[key].rows.push({ thrust, throttle, power, voltage, current, eff });
+  for(const r of filled){
+    const key = r[0]+'||'+r[1];
+    if(!groups[key]) groups[key]={type:r[0],prop:r[1],weight:r[10],rows:[]};
+    const thrust=Number(r[4]), throttle=Number(r[2]), power=Number(r[8]);
+    const voltage=Number(r[3]), current=Number(r[6]), eff=Number(r[9]);
+    if(!isNaN(thrust)&&!isNaN(throttle)&&thrust>0)
+      groups[key].rows.push({thrust,throttle,power,voltage,current,eff});
   }
 
-  const motors = [];
-  let skipped = 0;
-  for (const [, g] of Object.entries(groups)) {
-    if (g.rows.length < 3) { skipped++; continue; }
-    const xs = g.rows.map(r => r.thrust);
-    try {
-      const ct = polyfit(xs, g.rows.map(r => r.throttle));
-      const cp = polyfit(xs, g.rows.map(r => r.power));
-      const cv = polyfit(xs, g.rows.map(r => r.voltage));
-      const cc = polyfit(xs, g.rows.map(r => r.current));
-      const ce = polyfit(xs, g.rows.map(r => r.eff));
-      if (!ct || !cp || !cv || !cc || !ce) { skipped++; continue; }
-      const pm = g.prop.match(/(\d+)/);
+  const motors=[];
+  let skipped=0;
+  for(const [key,g] of Object.entries(groups)){
+    if(g.rows.length<3){skipped++;continue;}
+    const xs=g.rows.map(r=>r.thrust);
+    try{
+      const ct=polyfit(xs,g.rows.map(r=>r.throttle));
+      const cp=polyfit(xs,g.rows.map(r=>r.power));
+      const cv=polyfit(xs,g.rows.map(r=>r.voltage));
+      const cc=polyfit(xs,g.rows.map(r=>r.current));
+      const ce=polyfit(xs,g.rows.map(r=>r.eff));
+      if(!ct||!cp||!cv||!cc||!ce){skipped++;continue;}
+      const propStr=g.prop;
+      const pm=propStr.match(/(\d+)/);
+      const propSize=pm?parseInt(pm[1]):0;
       motors.push({
-        type: g.type, propeller: g.prop,
-        prop_size: pm ? parseInt(pm[1]) : 0,
-        motor_weight_g: g.weight || 0,
-        coef_throttle: ct, coef_power: cp, coef_voltage: cv,
-        coef_current: cc, coef_efficiency: ce
+        type:g.type, propeller:g.prop, prop_size:propSize,
+        motor_weight_g:g.weight||0,
+        coef_throttle:ct, coef_power:cp, coef_voltage:cv, coef_current:cc, coef_efficiency:ce
       });
-    } catch (e) { skipped++; }
+    }catch(e){skipped++;}
   }
 
-  if (motors.length === 0) {
-    showStatus(statusEl, 'err', '❌ 회귀 가능한 조합 없음. 각 모터+프롭 조합당 3행 이상 필요합니다.');
+  if(motors.length===0){
+    showStatus(statusEl,'err','❌ 회귀 가능한 조합 없음. 데이터 3행 이상 필요합니다.');
     return;
   }
 
-  showStatus(statusEl, 'ok',
-    `✓ ${motors.length}개 모터+프롭 조합 파싱 완료 (${skipped}개 스킵)\n` +
-    `헤더 ${headerIdx}행 인식 | 열 매핑: ` +
-    Object.entries(colMap).map(([k, v]) => `${k}→${String.fromCharCode(65 + v)}`).join(', ')
-  );
-  pendingData = { type: 'motor', motors };
+  showStatus(statusEl,'ok',`✓ ${motors.length}개 모터+프롭 조합 파싱 완료 (${skipped}개 스킵)`);
+  pendingData={type:'motor', motors};
   showPreview('motor', motors);
 }
 
